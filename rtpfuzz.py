@@ -4,6 +4,7 @@ import hexdump
 import time
 import argparse
 import os
+import socket
 
 max_file_len = 65535
 
@@ -89,11 +90,11 @@ def RTPBuild(outgoing):
 
 	for i in xrange(len(outgoing['payload'])):
 		try:
-			rtp_packet += 'uint:8=%d' %  outgoing['payload'][i]
+			rtp_packet += 'uint:8=%d' %  ord(outgoing['payload'][i])
 		except IndexError:
 			pass #just pass this on since missing data here doesnt foul the structure
 
-	return rtp_packet
+	return rtp_packet.tobytes()
 
 
 def RTPParse(incoming):
@@ -123,35 +124,35 @@ def RTPParse(incoming):
 
 def RTPFuzz(outgoing, items=3):
 	
-	for i in xrange(items):
-		if random.randint(0,100) < 20: #20 % of the fuzz cases are against the payload not the RTP structure
-			fc = random.choice(outgoing.keys())
-		else:
-			fc = "payload"
-		
-		if rtp_packet_types[fc] != -1:
-			s = ConstBitStream(random.randint(0, 2**32 - 1))
-			outgoing[fc] =  s.read('uint:%d' % rtp_packet_types[fc])
-		else:
-			if(random.randint(0,100) < 5): #5% fo the cases are just random garbage
-				outgoing[fc] = os.urandom(random.randint(0,2048))
-			else:
-				c = random.randint(0,5)
-				b = list(outgoing[fc])
-				rs =random.randint(0,len(outgoing[fc]))
-				if c == 0 :
-					b[rs] = chr(0xff)
-				elif c == 1:
-					b[rs] = chr(0x00)
-				elif c == 2:
-					b[rs] = chr(random.randint(0,255))
-				elif c == 3:
-					b[rs] = chr(ord(b[rs]) | 1 << random.randint(0,7))
-				elif c == 4:
-					b[rs] = chr(ord(b[rs]) ^ 1 << random.randint(0,7))
-				elif c == 5:
-					b[rs] = chr(ord(b[rs])  & 1 << random.randint(0,7))
-				outgoing[fc] = "".join(b)
+#	for i in xrange(items):
+#		if random.randint(0,100) < 20: #20 % of the fuzz cases are against the payload not the RTP structure
+#			fc = random.choice(outgoing.keys())
+#		else:
+#			fc = "payload"
+#		
+#		if rtp_packet_types[fc] != -1:
+#			s = ConstBitStream(random.randint(0, 2**32 - 1))
+#			outgoing[fc] =  s.read('uint:%d' % rtp_packet_types[fc])
+#		else:
+#			if(random.randint(0,100) < 5): #5% fo the cases are just random garbage
+#				outgoing[fc] = os.urandom(random.randint(0,2048))
+#			else:
+#				c = random.randint(0,5)
+#				b = list(outgoing[fc])
+#				rs =random.randint(0,len(outgoing[fc]))
+#				if c == 0 :
+#					b[rs] = chr(0xff)
+#				elif c == 1:
+#					b[rs] = chr(0x00)
+#				elif c == 2:
+#					b[rs] = chr(random.randint(0,255))
+#				elif c == 3:
+#					b[rs] = chr(ord(b[rs]) | 1 << random.randint(0,7))
+#				elif c == 4:
+#					b[rs] = chr(ord(b[rs]) ^ 1 << random.randint(0,7))
+#				elif c == 5:
+#					b[rs] = chr(ord(b[rs])  & 1 << random.randint(0,7))
+#				outgoing[fc] = "".join(b)
 	return outgoing
 
 
@@ -167,7 +168,7 @@ parser.add_argument("-f","--mutate_port", type=int, default=42010, help="port us
 parser.add_argument("-t","--template", default="rtp_template", help="RTP fuzz template")
 parser.add_argument("-m","--mode", default="parse", choices=['proxy', 'template','parse'], help="RTP fuzzer mode")
 parser.add_argument("-c","--count", default=1, help="Number of mutations to introduce per message")
-parser.add_argument("-d","--delay", default=0, help="Delay seconds before transmitting fuzz packet")
+parser.add_argument("-d","--delay", default=0, type=float, help="Delay seconds before transmitting fuzz packet")
 
 args = parser.parse_args()
 
@@ -200,6 +201,7 @@ elif args.mode == 'template':
 	f = open(args.template)
 	rtp_template = f.read(max_file_len)
 	f.close()
+	sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM) # UDP
 	parsed = RTPParse(rtp_template)
 	print "ready! (ctrl+c to exit)"
 	while 1:
